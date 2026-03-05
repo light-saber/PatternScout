@@ -50,6 +50,11 @@ class PatternCluster(BaseModel):
     examples: List[int]  # Screenshot IDs
     common_tags: List[str]
 
+class HybridRequest(BaseModel):
+    """Request to generate a hybrid idea from selected screenshots."""
+    screenshot_ids: Optional[List[int]] = None
+    max_patterns: int = 3
+
 class HybridIdea(BaseModel):
     """Generated hybrid pattern idea"""
     name: str

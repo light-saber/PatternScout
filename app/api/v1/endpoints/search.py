@@ -4,11 +4,21 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from pathlib import Path
 import logging
+import json
+import re
 
 from app.core.database import get_db
 from app.core.config import settings
 from app.models.search import SearchJob, Screenshot, Tag
-from app.schemas.search import SearchRequest, SearchResponse, JobStatus, ScreenshotResponse, PatternCluster
+from app.schemas.search import (
+    SearchRequest,
+    SearchResponse,
+    JobStatus,
+    ScreenshotResponse,
+    PatternCluster,
+    HybridRequest,
+    HybridIdea,
+)
 from app.scrapers.google_images import GoogleImagesClient
 from app.scrapers.design_sites import DesignSitesClient
 from app.services.ollama import OllamaClient
@@ -140,6 +150,55 @@ async def get_search_clusters(
         max_clusters=max(1, max_clusters),
     )
 
+
+@router.post("/search/{job_id}/hybrid", response_model=HybridIdea)
+async def generate_hybrid_idea(
+    job_id: int,
+    request: HybridRequest,
+    db: Session = Depends(get_db),
+):
+    """Generate a hybrid idea using selected analyzed patterns."""
+    job = db.query(SearchJob).filter(SearchJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    query = db.query(Screenshot).filter(
+        Screenshot.search_job_id == job_id,
+        Screenshot.analysis_status == "completed",
+    )
+    screenshots = query.all()
+    if not screenshots:
+        raise HTTPException(status_code=400, detail="No analyzed screenshots available")
+
+    if request.screenshot_ids:
+        selected = [s for s in screenshots if s.id in set(request.screenshot_ids)]
+    else:
+        selected = screenshots
+
+    if not selected:
+        raise HTTPException(status_code=400, detail="No matching screenshots found for selection")
+
+    max_patterns = max(2, min(5, request.max_patterns))
+    patterns = []
+    for shot in selected[:max_patterns]:
+        text = (shot.raw_description or "").strip() or (shot.title or "").strip() or shot.source_url
+        if text:
+            patterns.append(text)
+
+    if len(patterns) < 2:
+        raise HTTPException(status_code=400, detail="Need at least 2 patterns to generate hybrid")
+
+    ollama = OllamaClient()
+    raw = ollama.generate_hybrid(patterns)
+    parsed = _parse_hybrid_payload(raw)
+
+    return HybridIdea(
+        name=parsed.get("name", "Hybrid UI Pattern"),
+        description=parsed.get("description", "A practical blend of selected UI patterns."),
+        best_for=parsed.get("best_for", "Exploring alternative interaction approaches."),
+        key_features=parsed.get("key_features", []),
+    )
+
 async def scrape_and_analyze(job_id: int, query: str, num_results: int):
     """Background task: scrape images and analyze them"""
     from app.core.database import SessionLocal
@@ -264,3 +323,45 @@ async def scrape_and_analyze(job_id: int, query: str, num_results: int):
         db.commit()
     finally:
         db.close()
+
+
+def _parse_hybrid_payload(raw: str) -> dict:
+    text = (raw or "").strip()
+    if not text:
+        return {}
+    try:
+        payload = json.loads(text)
+        if isinstance(payload, dict):
+            return _sanitize_hybrid_payload(payload)
+    except Exception:
+        pass
+
+    match = re.search(r"\{[\s\S]*\}", text)
+    if match:
+        try:
+            payload = json.loads(match.group(0))
+            if isinstance(payload, dict):
+                return _sanitize_hybrid_payload(payload)
+        except Exception:
+            pass
+
+    return {
+        "name": "Hybrid UI Pattern",
+        "description": text,
+        "best_for": "Exploring alternative interaction approaches.",
+        "key_features": [],
+    }
+
+
+def _sanitize_hybrid_payload(payload: dict) -> dict:
+    key_features = payload.get("key_features", [])
+    if not isinstance(key_features, list):
+        key_features = []
+    key_features = [str(f).strip() for f in key_features if str(f).strip()][:6]
+
+    return {
+        "name": str(payload.get("name", "Hybrid UI Pattern")).strip() or "Hybrid UI Pattern",
+        "description": str(payload.get("description", "")).strip(),
+        "best_for": str(payload.get("best_for", "")).strip() or "Exploring alternative interaction approaches.",
+        "key_features": key_features,
+    }

@@ -282,6 +282,70 @@ def results_tab(api_url):
                                         st.write(screenshot["description"])
                                 
                                 st.divider()
+
+                    st.divider()
+                    st.subheader("Pattern Clusters")
+                    try:
+                        cluster_response = requests.get(
+                            f"{api_url}/api/v1/search/{int(job_id)}/clusters",
+                            params={"min_cluster_size": 1, "max_clusters": 10},
+                            timeout=20
+                        )
+                        if cluster_response.status_code == 200:
+                            clusters = cluster_response.json()
+                            if not clusters:
+                                st.info("No clusters available yet.")
+                            else:
+                                for c in clusters:
+                                    st.markdown(f"**{c['pattern_name']}** ({c['count']} examples)")
+                                    if c.get("common_tags"):
+                                        st.caption("Tags: " + ", ".join(c["common_tags"][:8]))
+                        else:
+                            st.warning("Could not load clusters.")
+                    except Exception as e:
+                        st.warning(f"Cluster fetch failed: {e}")
+
+                    st.divider()
+                    st.subheader("Generate Hybrid Idea")
+
+                    options = {
+                        f"{r['id']} - {(r.get('title') or 'Untitled')[:70]}": r["id"]
+                        for r in results
+                    }
+                    selected_labels = st.multiselect(
+                        "Select screenshots for hybrid generation",
+                        options=list(options.keys()),
+                        default=list(options.keys())[:3]
+                    )
+                    selected_ids = [options[label] for label in selected_labels]
+
+                    if st.button("🧪 Generate Hybrid", type="primary", key=f"hybrid_{job_id}"):
+                        if len(selected_ids) < 2:
+                            st.warning("Select at least 2 screenshots.")
+                        else:
+                            try:
+                                hybrid_response = requests.post(
+                                    f"{api_url}/api/v1/search/{int(job_id)}/hybrid",
+                                    json={"screenshot_ids": selected_ids, "max_patterns": 3},
+                                    timeout=60
+                                )
+                                if hybrid_response.status_code == 200:
+                                    st.session_state.hybrid_idea = hybrid_response.json()
+                                else:
+                                    st.error(f"Hybrid generation failed: {hybrid_response.text}")
+                            except Exception as e:
+                                st.error(f"Hybrid request failed: {e}")
+
+                    if st.session_state.get("hybrid_idea"):
+                        idea = st.session_state.hybrid_idea
+                        st.markdown(f"### {idea.get('name', 'Hybrid Idea')}")
+                        st.write(idea.get("description", ""))
+                        st.caption(f"Best for: {idea.get('best_for', '')}")
+                        features = idea.get("key_features", [])
+                        if features:
+                            st.markdown("**Key Features**")
+                            for feature in features:
+                                st.write(f"- {feature}")
             
             else:
                 st.error("Failed to load results")

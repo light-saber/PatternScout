@@ -116,6 +116,9 @@ Then poll status:
 curl http://localhost:8000/api/v1/search/<job_id>/status
 curl http://localhost:8000/api/v1/search/<job_id>/results
 curl "http://localhost:8000/api/v1/search/<job_id>/clusters?min_cluster_size=1&max_clusters=10"
+curl -X POST http://localhost:8000/api/v1/search/<job_id>/hybrid \
+  -H "Content-Type: application/json" \
+  -d '{"max_patterns":3}'
 ```
 
 If status completes with `"No images found"`, check Google API enablement and key permissions.
