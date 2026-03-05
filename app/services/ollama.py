@@ -92,6 +92,54 @@ Be concise. Focus on UI/UX patterns."""
                 "success": False,
                 "error": str(e)
             }
+
+    def analyze_metadata(self, title: Optional[str], source_url: Optional[str]) -> Dict[str, Any]:
+        """Generate a pattern description from text metadata only."""
+        prompt = f"""You are analyzing a UI screenshot using metadata only.
+
+Title: {title or "N/A"}
+Source URL: {source_url or "N/A"}
+
+Return concise JSON:
+{{
+  "description": "One short sentence describing likely UI pattern",
+  "component_type": "primary component",
+  "layout_pattern": "layout guess",
+  "interaction_type": "interaction guess",
+  "design_pattern": "named pattern if likely"
+}}"""
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/api/generate",
+                json={
+                    "model": self.text_model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "format": "json"
+                },
+                timeout=90
+            )
+            response.raise_for_status()
+            result = response.json()
+            response_text = result.get("response", "{}")
+
+            try:
+                parsed = json.loads(response_text)
+                return {
+                    "success": True,
+                    "description": parsed.get("description", ""),
+                    "component_type": parsed.get("component_type", ""),
+                    "layout_pattern": parsed.get("layout_pattern", ""),
+                    "interaction_type": parsed.get("interaction_type", ""),
+                    "design_pattern": parsed.get("design_pattern", ""),
+                    "raw": response_text,
+                }
+            except json.JSONDecodeError:
+                return {"success": True, "description": response_text, "raw": response_text}
+        except Exception as e:
+            logger.error(f"Metadata analysis failed: {e}")
+            return {"success": False, "error": str(e)}
     
     def extract_tags(self, description: str) -> List[Dict[str, Any]]:
         """

@@ -47,11 +47,15 @@ pip install -r requirements.txt
 ```bash
 # Install Ollama: https://ollama.com/download
 
-# Pull vision model for screenshot analysis
-ollama pull qwen2.5-vl
+# Pull 4B text model (used for metadata analysis + tagging)
+ollama pull qwen3.5:4b
+```
 
-# Pull text model for clustering and hybrid generation
-ollama pull qwen3.5
+Use text-only mode for lower latency:
+```env
+OLLAMA_USE_VISION=false
+OLLAMA_VISION_MODEL=qwen3.5:4b
+OLLAMA_TEXT_MODEL=qwen3.5:4b
 ```
 
 ### 5. Run the Application
@@ -139,11 +143,28 @@ PatternScout/
 - [ ] Sprint 2: Pattern clustering + hybrid generation
 - [ ] Sprint 3: Comparison view + export functionality
 
+## Known Issues
+
+See [ISSUES.md](./ISSUES.md) for active blockers and mitigation status.
+
+Current highlights:
+- Google Custom Search still returns `403` for current key/project setup.
+- Direct Pageflows fallback scraping is active and working.
+- Text-only tagging/description quality needs hardening.
+
+## Sprint 2 Plan
+
+Focus for Sprint 2 implementation:
+1. Pattern clustering endpoint and service (`/cluster`)
+2. Hybrid idea generation endpoint (`/hybrid`)
+3. Stronger post-processing for text-only analysis output quality
+4. Frontend controls for cluster/group browsing
+
 ## Architecture
 
 - **Backend**: FastAPI + SQLAlchemy + SQLite
 - **Scraping**: Google Custom Search API + Scrapling
-- **AI**: Ollama (Qwen2.5-VL for vision, Qwen 3.5 for text)
+- **AI**: Ollama (Qwen3.5 4B, text-only mode in current setup)
 - **Frontend**: Streamlit (MVP) → React (v2 if traction)
 
 ## License

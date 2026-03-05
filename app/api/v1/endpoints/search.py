@@ -194,7 +194,13 @@ async def scrape_and_analyze(job_id: int, query: str, num_results: int):
             Screenshot.local_path.isnot(None)
         ).all():
             try:
-                analysis = ollama.analyze_screenshot(screenshot.local_path)
+                if settings.OLLAMA_USE_VISION:
+                    analysis = ollama.analyze_screenshot(screenshot.local_path)
+                else:
+                    analysis = ollama.analyze_metadata(
+                        title=screenshot.title,
+                        source_url=screenshot.source_url,
+                    )
                 
                 if analysis.get("success"):
                     screenshot.raw_description = analysis.get("description", "")

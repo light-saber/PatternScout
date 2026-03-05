@@ -8,8 +8,9 @@ class Settings(BaseSettings):
     GOOGLE_CX: str = ""
 
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_VISION_MODEL: str = "qwen2.5-vl:latest"
-    OLLAMA_TEXT_MODEL: str = "qwen3.5:latest"
+    OLLAMA_VISION_MODEL: str = "qwen3.5:4b"
+    OLLAMA_TEXT_MODEL: str = "qwen3.5:4b"
+    OLLAMA_USE_VISION: bool = False
 
     SCREENSHOTS_DIR: str = "./screenshots"
     API_V1_STR: str = "/api/v1"
