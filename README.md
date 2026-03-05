@@ -172,5 +172,3 @@ Focus for Sprint 2 implementation:
 - **Frontend**: Streamlit (MVP) → React (v2 if traction)
 
 ## License
-
-Internal use at Walmart. Not for public distribution.
