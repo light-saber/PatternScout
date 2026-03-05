@@ -67,6 +67,7 @@ For each image:
 
 ## 5. Technical Architecture
 
+### 5.1 Backend
 ```
 ┌─────────────────────────────────────────────────────────┐
 │  FastAPI Backend                                        │
@@ -85,6 +86,23 @@ For each image:
    └─────────┘      └──────────┘      │• embeddings
                                       └──────────┘
 ```
+
+### 5.2 Frontend Decision: Streamlit
+
+**Decision Date:** 2026-03-05
+
+| Option | Pros | Cons | Decision |
+|--------|------|------|----------|
+| **Streamlit** | Fast to build (hours), built-in data viz, easy polling for background tasks | Limited customization, script-like feel | ✅ **Chosen for MVP** |
+| React | Unlimited customization, professional feel | Days to build, requires Node/build pipeline | Deferred to v2 |
+
+**Rationale:**
+- Goal is to *validate* the concept with PMs, not impress with UI polish
+- Streamlit's `st.image()` + `st.columns()` delivers grid view in ~20 lines
+- Background task status (`st.status`) is built-in
+- If demo flops, investment is hours not days
+
+**Migration path:** Streamlit MVP → React v2 if traction validates investment
 
 ### Stack
 - **Backend:** Python 3.11 + FastAPI
