@@ -8,10 +8,11 @@ import logging
 from app.core.database import get_db
 from app.core.config import settings
 from app.models.search import SearchJob, Screenshot, Tag
-from app.schemas.search import SearchRequest, SearchResponse, JobStatus, ScreenshotResponse
+from app.schemas.search import SearchRequest, SearchResponse, JobStatus, ScreenshotResponse, PatternCluster
 from app.scrapers.google_images import GoogleImagesClient
 from app.scrapers.design_sites import DesignSitesClient
 from app.services.ollama import OllamaClient
+from app.services.clustering import ClusteringService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -114,6 +115,31 @@ async def get_search_results(
         for s in screenshots
     ]
 
+
+@router.get("/search/{job_id}/clusters", response_model=List[PatternCluster])
+async def get_search_clusters(
+    job_id: int,
+    min_cluster_size: int = 2,
+    max_clusters: int = 10,
+    db: Session = Depends(get_db),
+):
+    """Get clustered patterns for analyzed results."""
+    job = db.query(SearchJob).filter(SearchJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    screenshots = db.query(Screenshot).filter(
+        Screenshot.search_job_id == job_id,
+        Screenshot.analysis_status == "completed",
+    ).all()
+
+    service = ClusteringService()
+    return service.cluster_screenshots(
+        screenshots=screenshots,
+        min_cluster_size=max(1, min_cluster_size),
+        max_clusters=max(1, max_clusters),
+    )
+
 async def scrape_and_analyze(job_id: int, query: str, num_results: int):
     """Background task: scrape images and analyze them"""
     from app.core.database import SessionLocal
@@ -203,11 +229,14 @@ async def scrape_and_analyze(job_id: int, query: str, num_results: int):
                     )
                 
                 if analysis.get("success"):
-                    screenshot.raw_description = analysis.get("description", "")
+                    description = (analysis.get("description") or "").strip()
+                    if not description:
+                        description = f"UI pattern from {screenshot.source_url}"
+                    screenshot.raw_description = description
                     screenshot.analysis_status = "completed"
                     
                     # Extract and save tags
-                    tags = ollama.extract_tags(screenshot.raw_description)
+                    tags = ollama.extract_tags(description)
                     for tag_data in tags:
                         tag = Tag(
                             screenshot_id=screenshot.id,

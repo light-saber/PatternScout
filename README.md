@@ -115,6 +115,7 @@ Then poll status:
 ```bash
 curl http://localhost:8000/api/v1/search/<job_id>/status
 curl http://localhost:8000/api/v1/search/<job_id>/results
+curl "http://localhost:8000/api/v1/search/<job_id>/clusters?min_cluster_size=1&max_clusters=10"
 ```
 
 If status completes with `"No images found"`, check Google API enablement and key permissions.
@@ -140,7 +141,7 @@ PatternScout/
 ## Development Roadmap
 
 - [x] Sprint 1: Core search + scraping + analysis
-- [ ] Sprint 2: Pattern clustering + hybrid generation
+- [~] Sprint 2: Pattern clustering + hybrid generation
 - [ ] Sprint 3: Comparison view + export functionality
 
 ## Known Issues

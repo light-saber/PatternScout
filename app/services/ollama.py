@@ -2,10 +2,10 @@
 import requests
 import base64
 from typing import Optional, Dict, Any, List
-from pathlib import Path
 from app.core.config import settings
 import logging
 import json
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -126,9 +126,14 @@ Return concise JSON:
 
             try:
                 parsed = json.loads(response_text)
+                description = self._build_description(
+                    parsed.get("description", ""),
+                    title,
+                    source_url,
+                )
                 return {
                     "success": True,
-                    "description": parsed.get("description", ""),
+                    "description": description,
                     "component_type": parsed.get("component_type", ""),
                     "layout_pattern": parsed.get("layout_pattern", ""),
                     "interaction_type": parsed.get("interaction_type", ""),
@@ -136,7 +141,11 @@ Return concise JSON:
                     "raw": response_text,
                 }
             except json.JSONDecodeError:
-                return {"success": True, "description": response_text, "raw": response_text}
+                return {
+                    "success": True,
+                    "description": self._build_description(response_text, title, source_url),
+                    "raw": response_text,
+                }
         except Exception as e:
             logger.error(f"Metadata analysis failed: {e}")
             return {"success": False, "error": str(e)}
@@ -173,8 +182,9 @@ Confidence: 0.0 to 1.0"""
             response.raise_for_status()
             
             result = response.json()
-            tags = json.loads(result.get("response", "[]"))
-            return tags if isinstance(tags, list) else []
+            response_text = result.get("response", "")
+            tags = self._parse_tags_response(response_text)
+            return self._sanitize_tags(tags)
             
         except Exception as e:
             logger.error(f"Tag extraction failed: {e}")
@@ -231,3 +241,73 @@ Response format:
         except Exception as e:
             logger.error(f"Failed to check model availability: {e}")
             return False
+
+    def _build_description(
+        self,
+        description: Optional[str],
+        title: Optional[str],
+        source_url: Optional[str],
+    ) -> str:
+        desc = (description or "").strip()
+        if desc and desc not in {"{}", "[]", "null", "None"}:
+            return desc
+
+        title_text = (title or "").strip()
+        source_text = (source_url or "").strip()
+
+        if title_text and source_text:
+            return f"UI pattern likely related to '{title_text}' from {source_text}."
+        if title_text:
+            return f"UI pattern likely related to '{title_text}'."
+        if source_text:
+            return f"UI pattern extracted from {source_text}."
+        return "UI pattern identified from available metadata."
+
+    def _parse_tags_response(self, raw: str) -> List[Dict[str, Any]]:
+        text = (raw or "").strip()
+        if not text:
+            return []
+
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                return parsed
+        except Exception:
+            pass
+
+        array_match = re.search(r"\[[\s\S]*\]", text)
+        if array_match:
+            try:
+                parsed = json.loads(array_match.group(0))
+                if isinstance(parsed, list):
+                    return parsed
+            except Exception:
+                pass
+
+        # Fallback for non-JSON outputs: split words/phrases.
+        pieces = re.split(r"[,;\n]+", text)
+        return [{"tag": p.strip(), "category": "general", "confidence": 0.6} for p in pieces if p.strip()]
+
+    def _sanitize_tags(self, tags: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        cleaned: List[Dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        for item in tags:
+            if not isinstance(item, dict):
+                continue
+            tag = str(item.get("tag", "")).strip().lower()
+            if not tag:
+                continue
+
+            category = str(item.get("category", "general")).strip().lower() or "general"
+            try:
+                confidence = float(item.get("confidence", 0.6))
+            except Exception:
+                confidence = 0.6
+            confidence = max(0.0, min(1.0, confidence))
+
+            key = (tag, category)
+            if key in seen:
+                continue
+            seen.add(key)
+            cleaned.append({"tag": tag, "category": category, "confidence": confidence})
+        return cleaned
