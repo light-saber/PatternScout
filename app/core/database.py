@@ -14,8 +14,11 @@ engine = create_engine(
 @event.listens_for(engine, "connect")
 def setup_sqlite(dbapi_conn, connection_record):
     if isinstance(dbapi_conn, sqlite3.Connection):
-        dbapi_conn.enable_load_extension(True)
+        if not hasattr(dbapi_conn, "enable_load_extension"):
+            return
+
         try:
+            dbapi_conn.enable_load_extension(True)
             dbapi_conn.load_extension("vec0")
         except Exception:
             pass  # sqlite-vec not installed, continue without vector support

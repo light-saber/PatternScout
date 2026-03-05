@@ -22,7 +22,7 @@ class GoogleImagesClient:
         self, 
         query: str, 
         num_results: int = 10,
-        image_type: str = "png",  # png, jpg, gif, bmp
+        image_type: Optional[str] = None,  # Google values: clipart, face, lineart, news, photo, animated, stock
         safe: str = "active"
     ) -> List[Dict]:
         """

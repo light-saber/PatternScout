@@ -24,6 +24,12 @@ Required:
 
 Get these at: https://developers.google.com/custom-search/v1/overview
 
+Important Google setup checklist (same GCP project as `GOOGLE_API_KEY`):
+- Enable **Custom Search API**
+- Enable billing on the project
+- If API key restrictions are enabled, allow **Custom Search API**
+- Use a valid Programmable Search Engine ID in `GOOGLE_CX` (entire web or curated sites)
+
 ### 3. Install Dependencies
 
 Using uv (recommended):
@@ -52,7 +58,7 @@ ollama pull qwen3.5
 
 Terminal 1 - Backend:
 ```bash
-uv run uvicorn app.main:app --reload
+uv run uvicorn app.main:app --reload --port 8000
 ```
 
 Terminal 2 - Frontend:
@@ -86,6 +92,27 @@ streamlit run frontend/app.py --server.port 8501
 3. **Browse**: View screenshots with AI-generated tags and descriptions
 4. **Filter**: Use tags to narrow down patterns
 
+## Quick API Smoke Test
+
+Once backend is running:
+
+```bash
+curl http://localhost:8000/health
+
+curl -X POST http://localhost:8000/api/v1/search \
+  -H "Content-Type: application/json" \
+  -d '{"query":"e-commerce checkout flow","num_results":3}'
+```
+
+Then poll status:
+
+```bash
+curl http://localhost:8000/api/v1/search/<job_id>/status
+curl http://localhost:8000/api/v1/search/<job_id>/results
+```
+
+If status completes with `"No images found"`, check Google API enablement and key permissions.
+
 ## Project Structure
 
 ```
@@ -113,7 +140,7 @@ PatternScout/
 ## Architecture
 
 - **Backend**: FastAPI + SQLAlchemy + SQLite
-- **Scraping**: Google Custom Search API + Scrapling
+- **Scraping**: Google Custom Search API
 - **AI**: Ollama (Qwen2.5-VL for vision, Qwen 3.5 for text)
 - **Frontend**: Streamlit (MVP) → React (v2 if traction)
 
