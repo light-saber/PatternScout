@@ -92,6 +92,8 @@ streamlit run frontend/app.py --server.port 8501
 3. **Browse**: View screenshots with AI-generated tags and descriptions
 4. **Filter**: Use tags to narrow down patterns
 
+Note: PatternScout uses Scrapling to extract cleaner page titles from source URLs when Google metadata is incomplete.
+
 ## Quick API Smoke Test
 
 Once backend is running:
@@ -140,7 +142,7 @@ PatternScout/
 ## Architecture
 
 - **Backend**: FastAPI + SQLAlchemy + SQLite
-- **Scraping**: Google Custom Search API
+- **Scraping**: Google Custom Search API + Scrapling
 - **AI**: Ollama (Qwen2.5-VL for vision, Qwen 3.5 for text)
 - **Frontend**: Streamlit (MVP) → React (v2 if traction)
 

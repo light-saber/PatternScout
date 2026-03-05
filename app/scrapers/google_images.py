@@ -4,6 +4,11 @@ from typing import List, Dict, Optional
 from app.core.config import settings
 import logging
 
+try:
+    from scrapling import Adaptor
+except Exception:  # pragma: no cover - optional dependency fallback
+    Adaptor = None
+
 logger = logging.getLogger(__name__)
 
 class GoogleImagesClient:
@@ -90,7 +95,37 @@ class GoogleImagesClient:
                 break
         
         return results[:num_results]
-    
+
+    def extract_page_title(self, url: str) -> Optional[str]:
+        """
+        Fetch source page and parse title with Scrapling for cleaner context labels.
+        Returns None when Scrapling is unavailable or extraction fails.
+        """
+        if Adaptor is None:
+            return None
+
+        try:
+            response = requests.get(
+                url,
+                timeout=10,
+                headers={"User-Agent": "PatternScout/0.1"},
+            )
+            response.raise_for_status()
+
+            content_type = response.headers.get("Content-Type", "")
+            if "text/html" not in content_type:
+                return None
+
+            page = Adaptor(response.text, url=url)
+            titles = page.css("title::text")
+            if not titles:
+                return None
+
+            title = str(titles[0]).strip()
+            return title or None
+        except Exception:
+            return None
+
     def download_image(self, image_url: str, local_path: str) -> bool:
         """Download an image to local storage"""
         try:

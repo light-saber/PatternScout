@@ -140,11 +140,17 @@ async def scrape_and_analyze(job_id: int, query: str, num_results: int):
         
         # Create screenshot records
         for result in results:
+            title = result["title"]
+            if not title or len(title.strip()) < 5:
+                page_title = scraper.extract_page_title(result["source_url"])
+                if page_title:
+                    title = page_title
+
             screenshot = Screenshot(
                 search_job_id=job_id,
                 source_url=result["source_url"],
                 image_url=result["image_url"],
-                title=result["title"],
+                title=title,
                 source_type="google_images"
             )
             db.add(screenshot)
