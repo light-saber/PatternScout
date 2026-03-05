@@ -4,10 +4,7 @@ from typing import List, Dict, Optional
 from app.core.config import settings
 import logging
 
-try:
-    from scrapling import Adaptor
-except Exception:  # pragma: no cover - optional dependency fallback
-    Adaptor = None
+from scrapling.parser import Selector
 
 logger = logging.getLogger(__name__)
 
@@ -99,11 +96,7 @@ class GoogleImagesClient:
     def extract_page_title(self, url: str) -> Optional[str]:
         """
         Fetch source page and parse title with Scrapling for cleaner context labels.
-        Returns None when Scrapling is unavailable or extraction fails.
         """
-        if Adaptor is None:
-            return None
-
         try:
             response = requests.get(
                 url,
@@ -116,12 +109,8 @@ class GoogleImagesClient:
             if "text/html" not in content_type:
                 return None
 
-            page = Adaptor(response.text, url=url)
-            titles = page.css("title::text")
-            if not titles:
-                return None
-
-            title = str(titles[0]).strip()
+            page = Selector(response.text, url=url)
+            title = (page.css("title::text").get() or "").strip()
             return title or None
         except Exception:
             return None

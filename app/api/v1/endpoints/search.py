@@ -2,17 +2,19 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List, Optional
-import asyncio
 from pathlib import Path
+import logging
 
 from app.core.database import get_db
 from app.core.config import settings
-from app.models.search import SearchJob, Screenshot, Tag, Embedding
+from app.models.search import SearchJob, Screenshot, Tag
 from app.schemas.search import SearchRequest, SearchResponse, JobStatus, ScreenshotResponse
 from app.scrapers.google_images import GoogleImagesClient
+from app.scrapers.design_sites import DesignSitesClient
 from app.services.ollama import OllamaClient
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # Ensure storage directory exists
 SCREENSHOTS_DIR = Path(settings.SCREENSHOTS_DIR)
@@ -126,11 +128,19 @@ async def scrape_and_analyze(job_id: int, query: str, num_results: int):
         job.status = "scraping"
         db.commit()
         
-        # Initialize scraper
-        scraper = GoogleImagesClient()
-        
-        # Search for images
-        results = scraper.search(query, num_results=num_results)
+        # Search for images via Google first, then direct scraping fallback.
+        results = []
+        google_scraper = None
+        fallback_scraper = None
+        try:
+            google_scraper = GoogleImagesClient()
+            results = google_scraper.search(query, num_results=num_results)
+        except Exception as e:
+            logger.warning(f"Google image search unavailable: {e}")
+
+        if not results:
+            fallback_scraper = DesignSitesClient()
+            results = fallback_scraper.search_pageflows(query, num_results=num_results)
         
         if not results:
             job.status = "completed"
@@ -142,16 +152,17 @@ async def scrape_and_analyze(job_id: int, query: str, num_results: int):
         for result in results:
             title = result["title"]
             if not title or len(title.strip()) < 5:
-                page_title = scraper.extract_page_title(result["source_url"])
-                if page_title:
-                    title = page_title
+                if google_scraper:
+                    page_title = google_scraper.extract_page_title(result["source_url"])
+                    if page_title:
+                        title = page_title
 
             screenshot = Screenshot(
                 search_job_id=job_id,
                 source_url=result["source_url"],
                 image_url=result["image_url"],
                 title=title,
-                source_type="google_images"
+                source_type=result.get("source_type", "google_images")
             )
             db.add(screenshot)
         
@@ -165,7 +176,10 @@ async def scrape_and_analyze(job_id: int, query: str, num_results: int):
             Screenshot.search_job_id == job_id
         ).all():
             local_path = SCREENSHOTS_DIR / f"{screenshot.id}.jpg"
-            if scraper.download_image(screenshot.image_url, str(local_path)):
+            downloader = google_scraper or fallback_scraper
+            if downloader is None:
+                continue
+            if downloader.download_image(screenshot.image_url, str(local_path)):
                 screenshot.local_path = str(local_path)
                 db.commit()
         
