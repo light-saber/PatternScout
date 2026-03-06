@@ -189,6 +189,48 @@ Confidence: 0.0 to 1.0"""
         except Exception as e:
             logger.error(f"Tag extraction failed: {e}")
             return []
+
+    def fallback_metadata_analysis(
+        self,
+        title: Optional[str],
+        source_url: Optional[str],
+    ) -> Dict[str, Any]:
+        """Return a deterministic local fallback when Ollama is unavailable."""
+        description = self._build_description("", title, source_url)
+        return {
+            "success": True,
+            "description": description,
+            "component_type": self._infer_component_type(title, source_url),
+            "layout_pattern": "",
+            "interaction_type": "",
+            "design_pattern": "",
+            "raw": "",
+        }
+
+    def fallback_tags(
+        self,
+        title: Optional[str],
+        source_url: Optional[str],
+        description: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        """Infer lightweight tags from title/url text when LLM tagging fails."""
+        text = " ".join([title or "", source_url or "", description or ""]).lower()
+        tag_rules = {
+            "component": ["filter", "filters", "sort", "dropdown", "modal", "carousel", "search", "menu", "cart", "checkout"],
+            "interaction": ["onboarding", "signup", "login", "search", "filter", "sort", "browse", "checkout", "payment"],
+            "domain": ["ecommerce", "e-commerce", "delivery", "food", "restaurant", "bank", "fintech", "travel"],
+            "platform": ["ios", "android", "mobile", "web"],
+        }
+
+        tags: List[Dict[str, Any]] = []
+        for category, candidates in tag_rules.items():
+            for candidate in candidates:
+                if candidate in text:
+                    normalized = "e-commerce" if candidate == "ecommerce" else candidate
+                    tags.append(
+                        {"tag": normalized, "category": category, "confidence": 0.55}
+                    )
+        return self._sanitize_tags(tags)
     
     def generate_hybrid(self, patterns: List[str]) -> str:
         """
@@ -230,6 +272,22 @@ Response format:
         except Exception as e:
             logger.error(f"Hybrid generation failed: {e}")
             return ""
+
+    def fallback_hybrid(self, patterns: List[str]) -> Dict[str, Any]:
+        """Build a deterministic hybrid idea when generation is unavailable."""
+        cleaned = [p.strip() for p in patterns if p and p.strip()]
+        short = cleaned[:3]
+        feature_lines = [self._summarize_pattern_text(text) for text in short]
+        return {
+            "name": "Hybrid Pattern Blend",
+            "description": (
+                "A practical concept that combines the strongest interaction cues from "
+                + ", ".join(feature_lines[:2] or ["the selected patterns"])
+                + "."
+            ),
+            "best_for": "Exploring a combined flow before committing to a single interaction model.",
+            "key_features": feature_lines[:4],
+        }
     
     def check_model_availability(self, model_name: str) -> bool:
         """Check if a model is available in Ollama"""
@@ -262,6 +320,29 @@ Response format:
         if source_text:
             return f"UI pattern extracted from {source_text}."
         return "UI pattern identified from available metadata."
+
+    def _infer_component_type(
+        self,
+        title: Optional[str],
+        source_url: Optional[str],
+    ) -> str:
+        text = " ".join([title or "", source_url or ""]).lower()
+        candidates = [
+            "filter", "sort", "search", "checkout", "cart", "menu",
+            "onboarding", "signup", "login", "modal", "dropdown",
+        ]
+        for candidate in candidates:
+            if candidate in text:
+                return candidate
+        return ""
+
+    def _summarize_pattern_text(self, text: str) -> str:
+        normalized = " ".join((text or "").split())
+        if not normalized:
+            return "selected pattern cue"
+        if len(normalized) <= 80:
+            return normalized
+        return normalized[:77].rstrip() + "..."
 
     def _parse_tags_response(self, raw: str) -> List[Dict[str, Any]]:
         text = (raw or "").strip()

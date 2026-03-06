@@ -144,7 +144,7 @@ PatternScout/
 ## Development Roadmap
 
 - [x] Sprint 1: Core search + scraping + analysis
-- [~] Sprint 2: Pattern clustering + hybrid generation
+- [x] Sprint 2: Pattern clustering + hybrid generation
 - [ ] Sprint 3: Comparison view + export functionality
 
 ## Known Issues
@@ -154,15 +154,23 @@ See [ISSUES.md](./ISSUES.md) for active blockers and mitigation status.
 Current highlights:
 - Google Custom Search still returns `403` for current key/project setup.
 - Direct Pageflows fallback scraping is active and working.
-- Text-only tagging/description quality needs hardening.
+- Retrieval quality is still biased toward fallback sources until Google search is restored.
 
-## Sprint 2 Plan
+## Sprint 2 Status
 
-Focus for Sprint 2 implementation:
-1. Pattern clustering endpoint and service (`/cluster`)
-2. Hybrid idea generation endpoint (`/hybrid`)
-3. Stronger post-processing for text-only analysis output quality
-4. Frontend controls for cluster/group browsing
+Completed in Sprint 2:
+1. Pattern clustering endpoint and metadata-backed clustering fallback
+2. Hybrid idea generation endpoint with deterministic fallback output
+3. Stronger post-processing for text-only analysis and tag fallback
+4. Frontend filter/sort controls for browsing result groups
+
+## Sprint 3 Focus
+
+Active focus for Sprint 3:
+1. Side-by-side comparison view for selected patterns
+2. Export functionality for results and synthesized ideas
+3. Retrieval quality hardening and additional source diversity
+4. Demo-readiness and workflow polish
 
 ## Architecture
 

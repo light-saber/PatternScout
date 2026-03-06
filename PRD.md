@@ -138,17 +138,17 @@ For each image:
 ## 7. Iteration Plan
 
 ### Sprint 1: Core Loop
-- [ ] Scrapling + Google Images integration
-- [ ] Qwen2.5-VL image analysis
-- [ ] SQLite storage
-- [ ] Basic grid UI
+- [x] Scrapling + Google Images integration
+- [x] Qwen2.5-VL image analysis
+- [x] SQLite storage
+- [x] Basic grid UI
 
 **Success:** Can search "checkout flow" and see 10+ analyzed screenshots
 
 ### Sprint 2: Intelligence
-- [ ] Pattern clustering
-- [ ] Hybrid generation
-- [ ] Filter/sort UI
+- [x] Pattern clustering
+- [x] Hybrid generation
+- [x] Filter/sort UI
 
 **Success:** Can identify 3 distinct patterns and generate 1 hybrid
 

@@ -1,6 +1,7 @@
 """API endpoints for search and analysis"""
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import asc, desc
 from typing import List, Optional
 from pathlib import Path
 import logging
@@ -95,6 +96,10 @@ async def get_search_status(job_id: int, db: Session = Depends(get_db)):
 async def get_search_results(
     job_id: int,
     tag: Optional[str] = None,
+    source_type: Optional[str] = None,
+    analysis_status: Optional[str] = None,
+    sort_by: str = Query("created_at", pattern="^(created_at|title|source_type|analysis_status)$"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$"),
     db: Session = Depends(get_db)
 ):
     """Get results for a completed search job"""
@@ -106,6 +111,21 @@ async def get_search_results(
     
     if tag:
         query = query.join(Tag).filter(Tag.tag_name == tag)
+
+    if source_type:
+        query = query.filter(Screenshot.source_type == source_type)
+
+    if analysis_status:
+        query = query.filter(Screenshot.analysis_status == analysis_status)
+
+    sort_column = {
+        "created_at": Screenshot.created_at,
+        "title": Screenshot.title,
+        "source_type": Screenshot.source_type,
+        "analysis_status": Screenshot.analysis_status,
+    }[sort_by]
+    sort_fn = asc if sort_order == "asc" else desc
+    query = query.order_by(sort_fn(sort_column), desc(Screenshot.id))
     
     screenshots = query.all()
     
@@ -191,6 +211,8 @@ async def generate_hybrid_idea(
     ollama = OllamaClient()
     raw = ollama.generate_hybrid(patterns)
     parsed = _parse_hybrid_payload(raw)
+    if not parsed:
+        parsed = ollama.fallback_hybrid(patterns)
 
     return HybridIdea(
         name=parsed.get("name", "Hybrid UI Pattern"),
@@ -286,31 +308,61 @@ def scrape_and_analyze(job_id: int, query: str, num_results: int):
                         title=screenshot.title,
                         source_url=screenshot.source_url,
                     )
-                
-                if analysis.get("success"):
-                    description = (analysis.get("description") or "").strip()
-                    if not description:
-                        description = f"UI pattern from {screenshot.source_url}"
-                    screenshot.raw_description = description
-                    screenshot.analysis_status = "completed"
-                    
-                    # Extract and save tags
-                    tags = ollama.extract_tags(description)
-                    for tag_data in tags:
-                        tag = Tag(
-                            screenshot_id=screenshot.id,
-                            tag_name=tag_data.get("tag", ""),
-                            tag_category=tag_data.get("category", "general"),
-                            confidence=tag_data.get("confidence", 1.0)
-                        )
-                        db.add(tag)
-                else:
-                    screenshot.analysis_status = "failed"
+
+                if not analysis.get("success"):
+                    analysis = ollama.fallback_metadata_analysis(
+                        title=screenshot.title,
+                        source_url=screenshot.source_url,
+                    )
+
+                description = (analysis.get("description") or "").strip()
+                if not description:
+                    description = f"UI pattern from {screenshot.source_url}"
+                screenshot.raw_description = description
+                screenshot.analysis_status = "completed"
+
+                # Extract and save tags
+                tags = ollama.extract_tags(description)
+                if not tags:
+                    tags = ollama.fallback_tags(
+                        title=screenshot.title,
+                        source_url=screenshot.source_url,
+                        description=description,
+                    )
+                for tag_data in tags:
+                    tag = Tag(
+                        screenshot_id=screenshot.id,
+                        tag_name=tag_data.get("tag", ""),
+                        tag_category=tag_data.get("category", "general"),
+                        confidence=tag_data.get("confidence", 1.0)
+                    )
+                    db.add(tag)
                 
                 db.commit()
                 
             except Exception as e:
-                screenshot.analysis_status = "failed"
+                fallback = ollama.fallback_metadata_analysis(
+                    title=screenshot.title,
+                    source_url=screenshot.source_url,
+                )
+                screenshot.raw_description = fallback.get(
+                    "description",
+                    f"UI pattern from {screenshot.source_url}",
+                )
+                screenshot.analysis_status = "completed"
+                for tag_data in ollama.fallback_tags(
+                    title=screenshot.title,
+                    source_url=screenshot.source_url,
+                    description=screenshot.raw_description,
+                ):
+                    db.add(
+                        Tag(
+                            screenshot_id=screenshot.id,
+                            tag_name=tag_data.get("tag", ""),
+                            tag_category=tag_data.get("category", "general"),
+                            confidence=tag_data.get("confidence", 1.0),
+                        )
+                    )
                 db.commit()
                 continue
         

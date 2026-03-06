@@ -86,13 +86,17 @@ def search_tab(api_url):
 
     if "example_query" not in st.session_state:
         st.session_state.example_query = ""
+    if "search_query_input" not in st.session_state:
+        st.session_state.search_query_input = st.session_state.example_query
+    if st.session_state.get("pending_example_fill"):
+        st.session_state.search_query_input = st.session_state.example_query
+        st.session_state.pending_example_fill = False
     
     col1, col2 = st.columns([3, 1])
     
     with col1:
         query = st.text_input(
             "What UI pattern are you researching?",
-            value=st.session_state.example_query,
             placeholder="e.g., e-commerce checkout flow, mobile onboarding, variant selector",
             help="Describe the UI pattern you want to find examples of",
             key="search_query_input",
@@ -148,7 +152,7 @@ def search_tab(api_url):
         with cols[i % 3]:
             if st.button(f"💡 {example}", key=f"ex_{i}"):
                 st.session_state.example_query = example
-                st.session_state.search_query_input = example
+                st.session_state.pending_example_fill = True
                 st.rerun()
 
 def results_tab(api_url):
@@ -168,6 +172,9 @@ def results_tab(api_url):
     if st.session_state.get("active_results_job_id") != job_id:
         st.session_state.active_results_job_id = job_id
         st.session_state.hybrid_idea = st.session_state.get("hybrid_idea_by_job", {}).get(job_id)
+        st.session_state[f"source_filter_{job_id}"] = "All"
+        st.session_state[f"status_filter_{job_id}"] = "All"
+        st.session_state[f"sort_by_{job_id}"] = "Newest"
     
     col1, col2 = st.columns([1, 3])
     
@@ -230,10 +237,47 @@ def results_tab(api_url):
     if st.session_state.get("loaded_job_id") == job_id:
         st.divider()
         st.subheader("Screenshots")
+
+        filter_col1, filter_col2, filter_col3 = st.columns(3)
+        with filter_col1:
+            selected_source = st.selectbox(
+                "Source",
+                options=["All", "pageflows", "google_images"],
+                key=f"source_filter_{job_id}",
+            )
+        with filter_col2:
+            selected_status = st.selectbox(
+                "Analysis",
+                options=["All", "completed", "pending", "failed"],
+                key=f"status_filter_{job_id}",
+            )
+        with filter_col3:
+            sort_by = st.selectbox(
+                "Sort",
+                options=["Newest", "Oldest", "Title A-Z", "Title Z-A", "Source", "Status"],
+                key=f"sort_by_{job_id}",
+            )
+
+        params = {}
+        if selected_source != "All":
+            params["source_type"] = selected_source
+        if selected_status != "All":
+            params["analysis_status"] = selected_status
+
+        sort_mapping = {
+            "Newest": ("created_at", "desc"),
+            "Oldest": ("created_at", "asc"),
+            "Title A-Z": ("title", "asc"),
+            "Title Z-A": ("title", "desc"),
+            "Source": ("source_type", "asc"),
+            "Status": ("analysis_status", "asc"),
+        }
+        params["sort_by"], params["sort_order"] = sort_mapping[sort_by]
         
         try:
             response = requests.get(
                 f"{api_url}/api/v1/search/{int(job_id)}/results",
+                params=params,
                 timeout=30
             )
             
@@ -243,6 +287,14 @@ def results_tab(api_url):
                 if not results:
                     st.info("No results yet. Wait for processing to complete.")
                 else:
+                    stats_col1, stats_col2, stats_col3 = st.columns(3)
+                    stats_col1.metric("Visible Results", len(results))
+                    stats_col2.metric("Sources", len({r["source_type"] for r in results}))
+                    stats_col3.metric(
+                        "Completed Analyses",
+                        sum(1 for r in results if r["analysis_status"] == "completed")
+                    )
+
                     # Filter by tags
                     all_tags = set()
                     for r in results:
