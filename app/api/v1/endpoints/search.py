@@ -84,6 +84,7 @@ async def get_search_status(job_id: int, db: Session = Depends(get_db)):
     
     return JobStatus(
         job_id=job.id,
+        query=job.query,
         status=job.status,
         created_at=job.created_at,
         updated_at=job.updated_at,

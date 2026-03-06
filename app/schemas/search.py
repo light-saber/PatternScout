@@ -18,6 +18,7 @@ class SearchResponse(BaseModel):
 class JobStatus(BaseModel):
     """Status of a search job"""
     job_id: int
+    query: str
     status: str
     created_at: datetime
     updated_at: datetime

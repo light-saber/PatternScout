@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import time
 import os
+import json
 
 # API configuration
 API_URL = os.getenv("API_URL", "http://localhost:8000")
@@ -81,6 +82,91 @@ def main():
     with tab2:
         results_tab(api_url)
 
+
+def render_screenshot_summary(screenshot, *, show_image=True):
+    if show_image and screenshot.get("image_url"):
+        st.image(screenshot["image_url"], width="stretch")
+
+    title = screenshot.get("title") or "Untitled"
+    st.markdown(f"**{title}**")
+    st.caption(
+        f"Source: {screenshot.get('source_type', 'unknown')} | "
+        f"Status: {screenshot.get('analysis_status', 'unknown')}"
+    )
+
+    if screenshot.get("source_url"):
+        st.markdown(f"[Open source]({screenshot['source_url']})")
+
+    tags = screenshot.get("tags") or []
+    if tags:
+        tags_html = " ".join(
+            f'<span class="tag">{t["tag"]}</span>' for t in tags[:6]
+        )
+        st.markdown(tags_html, unsafe_allow_html=True)
+
+    description = screenshot.get("description")
+    if description:
+        st.write(description)
+
+
+def build_export_payload(job_id, query, screenshots, hybrid_idea):
+    return {
+        "job_id": job_id,
+        "query": query,
+        "exported_count": len(screenshots),
+        "screenshots": screenshots,
+        "hybrid_idea": hybrid_idea,
+    }
+
+
+def build_export_markdown(job_id, query, screenshots, hybrid_idea):
+    lines = [
+        f"# PatternScout Export",
+        "",
+        f"- Job ID: {job_id}",
+        f"- Query: {query or 'N/A'}",
+        f"- Screenshots: {len(screenshots)}",
+        "",
+        "## Patterns",
+        "",
+    ]
+
+    for screenshot in screenshots:
+        lines.append(f"### {screenshot.get('title') or 'Untitled'}")
+        lines.append(f"- ID: {screenshot.get('id')}")
+        lines.append(f"- Source: {screenshot.get('source_type', 'unknown')}")
+        lines.append(f"- Status: {screenshot.get('analysis_status', 'unknown')}")
+        if screenshot.get("source_url"):
+            lines.append(f"- URL: {screenshot['source_url']}")
+        tags = ", ".join(t["tag"] for t in screenshot.get("tags", [])[:8])
+        if tags:
+            lines.append(f"- Tags: {tags}")
+        if screenshot.get("description"):
+            lines.append("")
+            lines.append(screenshot["description"])
+        lines.append("")
+
+    if hybrid_idea:
+        lines.extend(
+            [
+                "## Hybrid Idea",
+                "",
+                f"### {hybrid_idea.get('name', 'Hybrid Idea')}",
+                "",
+                hybrid_idea.get("description", ""),
+                "",
+                f"- Best for: {hybrid_idea.get('best_for', '')}",
+            ]
+        )
+        features = hybrid_idea.get("key_features", [])
+        if features:
+            lines.append("- Key features:")
+            for feature in features:
+                lines.append(f"  - {feature}")
+        lines.append("")
+
+    return "\n".join(lines)
+
 def search_tab(api_url):
     st.header("Start a New Search")
 
@@ -105,7 +191,7 @@ def search_tab(api_url):
     with col2:
         num_results = st.slider("Results", 5, 20, 10)
     
-    if st.button("🔍 Search", type="primary", use_container_width=True):
+    if st.button("🔍 Search", type="primary", width="stretch"):
         if not query:
             st.warning("Please enter a search query")
             return
@@ -179,11 +265,11 @@ def results_tab(api_url):
     col1, col2 = st.columns([1, 3])
     
     with col1:
-        if st.button("🔄 Refresh Status", use_container_width=True):
+        if st.button("🔄 Refresh Status", width="stretch"):
             st.rerun()
     
     with col2:
-        if st.button("📋 Load Results", type="primary", use_container_width=True):
+        if st.button("📋 Load Results", type="primary", width="stretch"):
             st.session_state.loaded_job_id = job_id
             st.rerun()
     
@@ -196,6 +282,7 @@ def results_tab(api_url):
         
         if response.status_code == 200:
             status = response.json()
+            st.session_state[f"job_query_{job_id}"] = status.get("query", "")
             
             # Status display
             status_color = {
@@ -295,6 +382,54 @@ def results_tab(api_url):
                         sum(1 for r in results if r["analysis_status"] == "completed")
                     )
 
+                    st.divider()
+                    st.subheader("Export")
+                    export_options = {
+                        f"{r['id']} - {(r.get('title') or 'Untitled')[:70]}": r["id"]
+                        for r in results
+                    }
+                    default_export = list(export_options.keys())[: min(3, len(export_options))]
+                    selected_export_labels = st.multiselect(
+                        "Choose screenshots to export",
+                        options=list(export_options.keys()),
+                        default=default_export,
+                        key=f"export_selection_{job_id}",
+                    )
+                    selected_export_ids = [export_options[label] for label in selected_export_labels]
+                    export_results = [
+                        r for r in results if not selected_export_ids or r["id"] in selected_export_ids
+                    ]
+                    export_payload = build_export_payload(
+                        job_id=job_id,
+                        query=st.session_state.get(f"job_query_{job_id}", st.session_state.get("current_query")),
+                        screenshots=export_results,
+                        hybrid_idea=st.session_state.get("hybrid_idea"),
+                    )
+                    export_markdown = build_export_markdown(
+                        job_id=job_id,
+                        query=st.session_state.get(f"job_query_{job_id}", st.session_state.get("current_query")),
+                        screenshots=export_results,
+                        hybrid_idea=st.session_state.get("hybrid_idea"),
+                    )
+
+                    export_col1, export_col2 = st.columns(2)
+                    with export_col1:
+                        st.download_button(
+                            "⬇️ Export JSON",
+                            data=json.dumps(export_payload, indent=2),
+                            file_name=f"patternscout-job-{job_id}.json",
+                            mime="application/json",
+                            width="stretch",
+                        )
+                    with export_col2:
+                        st.download_button(
+                            "⬇️ Export Markdown",
+                            data=export_markdown,
+                            file_name=f"patternscout-job-{job_id}.md",
+                            mime="text/markdown",
+                            width="stretch",
+                        )
+
                     # Filter by tags
                     all_tags = set()
                     for r in results:
@@ -311,42 +446,40 @@ def results_tab(api_url):
                                 r for r in results
                                 if any(t["tag"] in selected_tags for t in r["tags"])
                             ]
+
+                    st.divider()
+                    st.subheader("Compare Patterns")
+                    compare_options = {
+                        f"{r['id']} - {(r.get('title') or 'Untitled')[:70]}": r["id"]
+                        for r in results
+                    }
+                    selected_compare_labels = st.multiselect(
+                        "Select 2 to 4 screenshots for side-by-side comparison",
+                        options=list(compare_options.keys()),
+                        default=list(compare_options.keys())[:2],
+                        key=f"compare_selection_{job_id}",
+                    )
+                    selected_compare_ids = [compare_options[label] for label in selected_compare_labels[:4]]
+                    compare_results = [r for r in results if r["id"] in selected_compare_ids]
+
+                    if len(selected_compare_ids) == 1:
+                        st.info("Select at least 2 screenshots to compare.")
+                    elif compare_results:
+                        compare_cols = st.columns(len(compare_results))
+                        for col, screenshot in zip(compare_cols, compare_results):
+                            with col:
+                                render_screenshot_summary(screenshot)
+                    else:
+                        st.info("Choose screenshots to open the comparison view.")
                     
                     # Display grid
+                    st.divider()
+                    st.subheader("All Screenshots")
                     cols = st.columns(3)
                     for i, screenshot in enumerate(results):
                         with cols[i % 3]:
                             with st.container():
-                                # Image
-                                if screenshot["image_url"]:
-                                    st.image(
-                                        screenshot["image_url"],
-                                        use_container_width=True
-                                    )
-                                
-                                # Title
-                                if screenshot["title"]:
-                                    st.caption(screenshot["title"][:100])
-                                
-                                # Source link
-                                if screenshot["source_url"]:
-                                    st.markdown(
-                                        f"[View source]({screenshot['source_url']})"
-                                    )
-                                
-                                # Tags
-                                if screenshot["tags"]:
-                                    tags_html = " ".join([
-                                        f'<span class="tag">{t["tag"]}</span>'
-                                        for t in screenshot["tags"][:5]
-                                    ])
-                                    st.markdown(tags_html, unsafe_allow_html=True)
-                                
-                                # Description
-                                if screenshot["description"]:
-                                    with st.expander("📝 Analysis"):
-                                        st.write(screenshot["description"])
-                                
+                                render_screenshot_summary(screenshot, show_image=True)
                                 st.divider()
 
                     st.divider()
