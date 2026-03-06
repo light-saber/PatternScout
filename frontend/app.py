@@ -1,7 +1,6 @@
 import streamlit as st
 import requests
 import time
-from datetime import datetime
 import os
 
 # API configuration
@@ -84,14 +83,19 @@ def main():
 
 def search_tab(api_url):
     st.header("Start a New Search")
+
+    if "example_query" not in st.session_state:
+        st.session_state.example_query = ""
     
     col1, col2 = st.columns([3, 1])
     
     with col1:
         query = st.text_input(
             "What UI pattern are you researching?",
+            value=st.session_state.example_query,
             placeholder="e.g., e-commerce checkout flow, mobile onboarding, variant selector",
-            help="Describe the UI pattern you want to find examples of"
+            help="Describe the UI pattern you want to find examples of",
+            key="search_query_input",
         )
     
     with col2:
@@ -114,6 +118,8 @@ def search_tab(api_url):
                     data = response.json()
                     st.session_state.current_job_id = data["job_id"]
                     st.session_state.current_query = query
+                    st.session_state.loaded_job_id = None
+                    st.session_state.hybrid_idea_by_job = {}
                     st.success(f"Search started! Job ID: {data['job_id']}")
                     
                     # Auto-redirect to results tab
@@ -142,18 +148,26 @@ def search_tab(api_url):
         with cols[i % 3]:
             if st.button(f"💡 {example}", key=f"ex_{i}"):
                 st.session_state.example_query = example
+                st.session_state.search_query_input = example
                 st.rerun()
 
 def results_tab(api_url):
     st.header("Search Results")
+    previous_job_id = st.session_state.get("results_job_id", st.session_state.get("current_job_id", 1))
     
     # Job ID input
     job_id = st.number_input(
         "Job ID",
         min_value=1,
-        value=st.session_state.get("current_job_id", 1),
-        step=1
+        value=previous_job_id,
+        step=1,
+        key="results_job_id",
     )
+    job_id = int(job_id)
+
+    if st.session_state.get("active_results_job_id") != job_id:
+        st.session_state.active_results_job_id = job_id
+        st.session_state.hybrid_idea = st.session_state.get("hybrid_idea_by_job", {}).get(job_id)
     
     col1, col2 = st.columns([1, 3])
     
@@ -163,7 +177,7 @@ def results_tab(api_url):
     
     with col2:
         if st.button("📋 Load Results", type="primary", use_container_width=True):
-            st.session_state.load_results = True
+            st.session_state.loaded_job_id = job_id
             st.rerun()
     
     # Fetch and display status
@@ -213,7 +227,7 @@ def results_tab(api_url):
         st.error(f"Failed to fetch status: {e}")
     
     # Load results
-    if st.session_state.get("load_results"):
+    if st.session_state.get("loaded_job_id") == job_id:
         st.divider()
         st.subheader("Screenshots")
         
@@ -330,7 +344,11 @@ def results_tab(api_url):
                                     timeout=60
                                 )
                                 if hybrid_response.status_code == 200:
-                                    st.session_state.hybrid_idea = hybrid_response.json()
+                                    idea = hybrid_response.json()
+                                    st.session_state.hybrid_idea = idea
+                                    hybrid_by_job = st.session_state.get("hybrid_idea_by_job", {})
+                                    hybrid_by_job[job_id] = idea
+                                    st.session_state.hybrid_idea_by_job = hybrid_by_job
                                 else:
                                     st.error(f"Hybrid generation failed: {hybrid_response.text}")
                             except Exception as e:

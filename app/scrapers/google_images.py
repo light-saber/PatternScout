@@ -1,8 +1,11 @@
 """Google Custom Search API client for fetching UI screenshots"""
+import logging
+import re
+from urllib.parse import urlparse
+
 import requests
 from typing import List, Dict, Optional
 from app.core.config import settings
-import logging
 
 from scrapling.parser import Selector
 
@@ -12,6 +15,18 @@ class GoogleImagesClient:
     """Client for Google Custom Search API (Image search)"""
     
     BASE_URL = "https://www.googleapis.com/customsearch/v1"
+    BLOCKED_DOMAINS = {
+        "apps.apple.com",
+        "play.google.com",
+        "appadvice.com",
+        "apkcombo.com",
+        "apkpure.com",
+        "uptodown.com",
+    }
+    STOPWORDS = {
+        "a", "an", "and", "app", "design", "flow", "for", "in", "interface",
+        "of", "page", "screen", "screenshot", "the", "to", "ui", "ux", "with",
+    }
     
     def __init__(self, api_key: Optional[str] = None, cx: Optional[str] = None):
         self.api_key = api_key or settings.GOOGLE_API_KEY
@@ -40,14 +55,16 @@ class GoogleImagesClient:
             List of image results with url, title, source
         """
         results = []
+        ranked_results = []
         start_index = 1
+        enriched_query = self._build_query(query)
         
         # Google API maxes at 10 results per call, 100 total
         while len(results) < num_results and start_index <= 91:
             params = {
                 "key": self.api_key,
                 "cx": self.cx,
-                "q": query,
+                "q": enriched_query,
                 "searchType": "image",
                 "num": min(10, num_results - len(results)),
                 "start": start_index,
@@ -67,14 +84,19 @@ class GoogleImagesClient:
                     break
                 
                 for item in items:
-                    results.append({
+                    candidate = {
                         "title": item.get("title", ""),
                         "image_url": item.get("link", ""),
                         "source_url": item.get("image", {}).get("contextLink", ""),
                         "thumbnail_url": item.get("image", {}).get("thumbnailLink", ""),
                         "width": item.get("image", {}).get("width", 0),
                         "height": item.get("image", {}).get("height", 0),
-                    })
+                    }
+                    score = self._score_result(query, candidate)
+                    if score <= 0:
+                        continue
+                    ranked_results.append((score, candidate))
+                    results.append(candidate)
                 
                 start_index += len(items)
                 
@@ -91,7 +113,8 @@ class GoogleImagesClient:
                 logger.error(f"Unexpected error in Google search: {e}")
                 break
         
-        return results[:num_results]
+        ranked_results.sort(key=lambda item: item[0], reverse=True)
+        return [candidate for _, candidate in ranked_results[:num_results]]
 
     def extract_page_title(self, url: str) -> Optional[str]:
         """
@@ -129,3 +152,50 @@ class GoogleImagesClient:
         except Exception as e:
             logger.error(f"Failed to download image {image_url}: {e}")
             return False
+
+    def _build_query(self, query: str) -> str:
+        return f"{query} UI screenshot UX pattern"
+
+    def _score_result(self, query: str, item: Dict[str, str]) -> int:
+        title = item.get("title", "")
+        source_url = item.get("source_url", "")
+        image_url = item.get("image_url", "")
+
+        if self._is_blocked_source(title, source_url, image_url):
+            return 0
+
+        haystack = " ".join([title, source_url, image_url]).lower()
+        query_tokens = self._tokenize(query)
+        if not query_tokens:
+            return 1
+
+        overlap = sum(1 for token in query_tokens if token in haystack)
+        if overlap == 0:
+            return 0
+
+        score = overlap * 3
+        if "dribbble.com" in haystack or "behance.net" in haystack or "pageflows.com" in haystack:
+            score += 2
+        if "pinterest." in haystack:
+            score -= 1
+        return score
+
+    def _is_blocked_source(self, title: str, source_url: str, image_url: str) -> bool:
+        title_lower = (title or "").lower()
+        if "app store" in title_lower or "google play" in title_lower:
+            return True
+
+        for raw_url in (source_url, image_url):
+            hostname = urlparse(raw_url or "").hostname or ""
+            hostname = hostname.lower()
+            if hostname in self.BLOCKED_DOMAINS:
+                return True
+
+        return False
+
+    def _tokenize(self, query: str) -> List[str]:
+        tokens = [
+            token for token in re.findall(r"[a-z0-9]+", (query or "").lower())
+            if token not in self.STOPWORDS and len(token) > 2
+        ]
+        return list(dict.fromkeys(tokens))

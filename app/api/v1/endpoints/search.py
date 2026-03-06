@@ -199,7 +199,7 @@ async def generate_hybrid_idea(
         key_features=parsed.get("key_features", []),
     )
 
-async def scrape_and_analyze(job_id: int, query: str, num_results: int):
+def scrape_and_analyze(job_id: int, query: str, num_results: int):
     """Background task: scrape images and analyze them"""
     from app.core.database import SessionLocal
     
